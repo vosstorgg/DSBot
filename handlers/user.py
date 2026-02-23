@@ -69,10 +69,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
     thinking_msg = await update.message.reply_text("〰️ Размышляю...")
     
-    # Предклассификация: сон или общее сообщение (приветствие, вопрос о боте и т.д.)
-    intent = await ai_service.classify_message_intent(user_message)
+    # Предклассификация с учётом контекста (истории)
+    history = db.get_message_history(chat_id, 6)
+    intent = await ai_service.classify_message_intent(user_message, history)
+    if intent == "clarification":
+        last_bot_msg = history[-1].get("content", "") if history and history[-1].get("role") == "assistant" else ""
+        context_summary = extract_context_from_bot_response(last_bot_msg)
+        await process_clarification_question(update, context, user_message, context_summary, thinking_msg)
+        return
     if intent == "not_dream":
-        history = db.get_message_history(chat_id, 4)
         reply = await ai_service.respond_general(user_message, history)
         db.save_message(chat_id, "user", user_message)
         db.save_message(chat_id, "assistant", reply)
@@ -118,7 +123,7 @@ def extract_context_from_bot_response(bot_message: str) -> str:
     return f"Previous interpretation context: {context}..."
 
 
-async def process_clarification_question(update: Update, context: ContextTypes.DEFAULT_TYPE, question: str, context_summary: str):
+async def process_clarification_question(update: Update, context: ContextTypes.DEFAULT_TYPE, question: str, context_summary: str, thinking_msg=None):
     """Обработка уточняющего вопроса с контекстом предыдущего ответа"""
     chat_id = str(update.effective_chat.id)
     user = update.effective_user
@@ -126,17 +131,18 @@ async def process_clarification_question(update: Update, context: ContextTypes.D
     # Логируем уточняющий вопрос
     db.log_activity(user, chat_id, "clarification_question", question)
     
-    # Отправляем "размышляет"
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-    thinking_msg = await update.message.reply_text("〰️ Размышляю над твоим вопросом...")
+    if not thinking_msg:
+        thinking_msg = await update.message.reply_text("〰️ Размышляю над твоим вопросом...")
     
     try:
         # Создаем специальный промпт для уточняющего вопроса
-        clarification_prompt = f"""User asks: {question}
+        clarification_prompt = f"""Previous context (your dream interpretation and question): {context_summary}
 
-Previous context: {context_summary}
+User's message: {question}
+(The user may be ANSWERING your question from the context, or asking a follow-up.)
 
-#Instructions: Answer the question thoroughly & warmly. Keep supportive tone. Use ❓ emoji. Be helpful & empathetic. Don't rewrite dream interpretation. Give useful advice if relevant. Russian language, informal 'ты'. Use the full context provided to give accurate and relevant answers."""
+#Instructions: Engage with their message supportively. If they answered your question — acknowledge and reflect on their answer warmly. If they asked something — answer thoroughly. Use ❓ emoji. Keep supportive tone. Russian language, informal 'ты'. Don't repeat or rewrite the full dream interpretation."""
 
         # Получаем ответ от AI
         reply = await ai_service.analyze_clarification_question(question, clarification_prompt)

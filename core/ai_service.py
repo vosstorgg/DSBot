@@ -65,10 +65,19 @@ class AIService:
         except Exception as e:
             return f"❌ Ошибка при анализе сна: {e}"
     
-    async def classify_message_intent(self, user_message: str) -> str:
-        """Определяет, является ли сообщение описанием сна (dream) или нет (not_dream)."""
+    async def classify_message_intent(self, user_message: str, history: Optional[List[Dict]] = None) -> str:
+        """Определяет тип сообщения: dream, not_dream или clarification (ответ на вопрос бота)."""
         if not user_message or len(user_message.strip()) < 3:
             return "not_dream"
+
+        # Если последнее сообщение бота содержало вопрос и ответ пользователя короткий — это уточнение
+        if history:
+            last_msg = history[-1] if history else None
+            if (last_msg and last_msg.get("role") == "assistant" and
+                    "?" in (last_msg.get("content") or "") and
+                    len(user_message.strip()) < 350):
+                return "clarification"
+
         try:
             response = await self.client.chat.completions.create(
                 model=AI_SETTINGS["model"],
