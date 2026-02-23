@@ -70,19 +70,22 @@ class AIService:
         if not user_message or len(user_message.strip()) < 3:
             return "not_dream"
 
-        # Если последнее сообщение бота — толкование сна, а пользователь добавляет детали или отвечает — это уточнение
-        if history:
+        # Явный новый сон — никогда не уточнение
+        new_dream_markers = ("мне приснилось", "приснилось", "снилось", "видел сон", "во сне я", "снился", "приснился")
+        if any(m in user_message.lower()[:100] for m in new_dream_markers):
+            pass  # пропускаем clarification, идём в LLM
+        # Уточнение только: (а) ответ на вопрос бота (есть ?) или (б) дополнение сна ("ещё там", "также")
+        elif history:
             last_msg = history[-1] if history else None
             if last_msg and last_msg.get("role") == "assistant":
                 content = last_msg.get("content") or ""
-                # Бот пригласил к диалогу: вопрос, "дай знать", "если есть детали" и т.п.
-                invite_phrases = ("?", "дай знать", "если есть", "ещё детали", "подробнее", "вопросы", "расскажи")
-                bot_invites = any(p in content.lower() for p in invite_phrases)
-                # Пользователь дополняет сон: "ещё там", "также", "дополн" или короткое сообщение
+                has_question = "?" in content
                 addition_markers = ("ещё", "также", "дополн", "кстати", "а ещё")
                 user_adds = any(m in user_message.lower() for m in addition_markers)
-                if (bot_invites or user_adds) and len(user_message.strip()) < 450:
-                    return "clarification"
+                if has_question and len(user_message.strip()) < 350:
+                    return "clarification"  # прямой ответ на вопрос
+                if user_adds and len(user_message.strip()) < 450:
+                    return "clarification"  # дополнение к предыдущему сну
 
         try:
             response = await self.client.chat.completions.create(
