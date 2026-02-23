@@ -54,13 +54,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_donate_message(chat_id, context)
         return
     
-    # Для обычных пользователей - обрабатываем только текстовые описания снов
     if not user_message:
         await update.message.reply_text(
             "🤔 Я анализирую только текстовые описания снов. Расскажи мне свой сон словами или запиши голосовое сообщение, и я помогу его понять.",
             reply_markup=MAIN_MENU
         )
         return
+    
+    # Кнопка «Уточнить детали» — следующее сообщение считается уточнением
+    if context.user_data.get("awaiting_clarification"):
+        source_type = context.user_data.pop("awaiting_clarification")
+        pending = db.get_pending_dream(chat_id)
+        if pending:
+            context_summary = extract_context_from_bot_response(pending.get("interpretation", ""))
+            await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+            thinking_msg = await update.message.reply_text("〰️ Размышляю над твоими деталями...")
+            await process_clarification_question(update, context, user_message, context_summary, thinking_msg)
+            return
     
     # Логирование
     db.log_activity(user, chat_id, "message", user_message)
@@ -158,10 +168,10 @@ User's message: {question}
         message_type = ai_service.extract_message_type(reply)
         
         if message_type == 'dream':
-            # Для толкований снов добавляем две кнопки
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📖 Сохранить в дневник снов", callback_data="save_dream:clarification")],
-                [InlineKeyboardButton("🔮 Астрологическое толкование", callback_data="astrological:clarification")]
+                [InlineKeyboardButton("📖 Сохранить в дневник снов", callback_data="save_dream:clarification"),
+                 InlineKeyboardButton("🔮 Астрологическое толкование", callback_data="astrological:clarification")],
+                [InlineKeyboardButton("💬 Уточнить детали", callback_data="clarify_details:clarification")]
             ])
             # Сохраняем данные сна во временное хранилище для последующего сохранения
             db.save_pending_dream(chat_id, question, reply, 'clarification')
@@ -288,10 +298,10 @@ async def process_dream_text(update: Update, context: ContextTypes.DEFAULT_TYPE,
     
     # Создаем клавиатуру в зависимости от типа сообщения
     if message_type == 'dream':
-        # Для толкований снов добавляем две кнопки
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📖 Сохранить в дневник снов", callback_data=f"save_dream:{source_type}")],
-            [InlineKeyboardButton("🔮 Астрологическое толкование", callback_data=f"astrological:{source_type}")]
+            [InlineKeyboardButton("📖 Сохранить в дневник снов", callback_data=f"save_dream:{source_type}"),
+             InlineKeyboardButton("🔮 Астрологическое толкование", callback_data=f"astrological:{source_type}")],
+            [InlineKeyboardButton("💬 Уточнить детали", callback_data=f"clarify_details:{source_type}")]
         ])
         # Сохраняем данные сна во временное хранилище для последующего сохранения
         db.save_pending_dream(chat_id, dream_text, reply, source_type)
@@ -325,6 +335,19 @@ async def process_dream_text(update: Update, context: ContextTypes.DEFAULT_TYPE,
             context.user_data['dream_interpretation_msg_id'] = sent_msg.message_id
         else:
             await update.message.reply_text(reply, parse_mode='Markdown')
+
+
+async def handle_clarify_details_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Кнопка «Уточнить детали» — эмулирует Reply: следующее сообщение пользователя будет уточнением."""
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(update.effective_chat.id)
+    parts = query.data.split(":", 1)
+    source_type = parts[1] if len(parts) > 1 else "text"
+    context.user_data["awaiting_clarification"] = source_type
+    await query.message.reply_text(
+        "💬 Напиши детали, которые хочешь добавить — я учту их и дополню толкование."
+    )
 
 
 async def start_first_dream_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
