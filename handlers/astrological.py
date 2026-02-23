@@ -146,7 +146,8 @@ async def perform_astrological_analysis(update, context, pending_dream, source_t
         if message_type == 'dream':
             # Для астрологических толкований добавляем кнопку "Сохранить в дневник"
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📖 Сохранить в дневник снов", callback_data=f"save_dream:{source_type}")]
+                [InlineKeyboardButton("📖 Сохранить в дневник снов", callback_data=f"save_dream:{source_type}")],
+                [InlineKeyboardButton("💬 Уточнить детали", callback_data=f"clarify_details:{source_type}")]
             ])
             
             # Обновляем временные данные для астрологического толкования
@@ -215,7 +216,8 @@ async def perform_astrological_analysis_from_date_input(update, context, pending
         if message_type == 'dream':
             # Для астрологических толкований добавляем кнопку "Сохранить в дневник"
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📖 Сохранить в дневник снов", callback_data=f"save_dream:{source_type}")]
+                [InlineKeyboardButton("📖 Сохранить в дневник снов", callback_data=f"save_dream:{source_type}")],
+                [InlineKeyboardButton("💬 Уточнить детали", callback_data=f"clarify_details:{source_type}")]
             ])
             
             # Обновляем временные данные для астрологического толкования

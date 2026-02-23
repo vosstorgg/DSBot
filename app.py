@@ -10,7 +10,7 @@ from telegram import Update, BotCommand, InlineKeyboardMarkup, InlineKeyboardBut
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
 # Импорты обработчиков
-from handlers.user import handle_message, handle_voice_message
+from handlers.user import handle_message, handle_voice_message, handle_clarify_details_callback
 from handlers.profile import start_command, handle_profile_callbacks, handle_info_callbacks, send_start_menu
 from handlers.admin import admin_panel_command, cancel_command, handle_admin_callbacks, handle_admin_broadcast_content, admin_broadcast_states
 from handlers.diary import handle_diary_callbacks
@@ -86,6 +86,11 @@ async def main_button_handler(update, context):
     # Обработчик астрологического толкования
     if query.data.startswith("astrological:"):
         await handle_astrological_callback(update, context, query.data)
+        return
+    
+    # Кнопка «Уточнить детали»
+    if query.data.startswith("clarify_details:"):
+        await handle_clarify_details_callback(update, context)
         return
     
     # Обработчик выбора даты для астрологического толкования

@@ -54,7 +54,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_donate_message(chat_id, context)
         return
     
-    # Для обычных пользователей - обрабатываем только текстовые описания снов
     if not user_message:
         await update.message.reply_text(
             "🤔 Я анализирую только текстовые описания снов. Расскажи мне свой сон словами или запиши голосовое сообщение, и я помогу его понять.",
@@ -62,17 +61,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # Логирование и обработка сна
+    # Кнопка «Уточнить детали» — следующее сообщение считается уточнением
+    if context.user_data.get("awaiting_clarification"):
+        source_type = context.user_data.pop("awaiting_clarification")
+        pending = db.get_pending_dream(chat_id)
+        if pending:
+            context_summary = extract_context_from_bot_response(pending.get("interpretation", ""))
+            await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+            thinking_msg = await update.message.reply_text("〰️ Размышляю над твоими деталями...")
+            await process_clarification_question(update, context, user_message, context_summary, thinking_msg)
+            return
+    
+    # Логирование
     db.log_activity(user, chat_id, "message", user_message)
-    db.log_activity(user, chat_id, "gpt_request", f"model={AI_SETTINGS['model']}, temp={AI_SETTINGS['temperature']}, max_tokens={AI_SETTINGS['max_tokens']}")
     
     # Отправка "размышляет"
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
     thinking_msg = await update.message.reply_text("〰️ Размышляю...")
     
-    # Используем общую функцию для обработки текста сна (source_type = 'text' по умолчанию)
-    # Передаем thinking_msg, чтобы "Размышляю..." заменилось на толкование
-    await process_dream_text(update, context, user_message, thinking_msg, 'text')
+    # Предклассификация с учётом контекста (истории)
+    history = db.get_message_history(chat_id, 6)
+    intent = await ai_service.classify_message_intent(user_message, history)
+    if intent == "clarification":
+        last_bot_msg = history[-1].get("content", "") if history and history[-1].get("role") == "assistant" else ""
+        context_summary = extract_context_from_bot_response(last_bot_msg)
+        await process_clarification_question(update, context, user_message, context_summary, thinking_msg)
+        return
+    if intent == "not_dream":
+        reply = await ai_service.respond_general(user_message, history)
+        db.save_message(chat_id, "user", user_message)
+        db.save_message(chat_id, "assistant", reply)
+        db.log_activity(user, chat_id, "general_response", reply[:200])
+        await thinking_msg.edit_text(reply, parse_mode="Markdown")
+        return
+    
+    db.log_activity(user, chat_id, "gpt_request", f"model={AI_SETTINGS['model']}, dream_interpretation")
+    await process_dream_text(update, context, user_message, thinking_msg, "text")
 
 
 async def handle_reply_message(update: Update, context: ContextTypes.DEFAULT_TYPE, question: str):
@@ -109,7 +133,7 @@ def extract_context_from_bot_response(bot_message: str) -> str:
     return f"Previous interpretation context: {context}..."
 
 
-async def process_clarification_question(update: Update, context: ContextTypes.DEFAULT_TYPE, question: str, context_summary: str):
+async def process_clarification_question(update: Update, context: ContextTypes.DEFAULT_TYPE, question: str, context_summary: str, thinking_msg=None):
     """Обработка уточняющего вопроса с контекстом предыдущего ответа"""
     chat_id = str(update.effective_chat.id)
     user = update.effective_user
@@ -117,17 +141,18 @@ async def process_clarification_question(update: Update, context: ContextTypes.D
     # Логируем уточняющий вопрос
     db.log_activity(user, chat_id, "clarification_question", question)
     
-    # Отправляем "размышляет"
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-    thinking_msg = await update.message.reply_text("〰️ Размышляю над твоим вопросом...")
+    if not thinking_msg:
+        thinking_msg = await update.message.reply_text("〰️ Размышляю над твоим вопросом...")
     
     try:
         # Создаем специальный промпт для уточняющего вопроса
-        clarification_prompt = f"""User asks: {question}
+        clarification_prompt = f"""Previous context (your dream interpretation): {context_summary}
 
-Previous context: {context_summary}
+User's message: {question}
+(The user may be adding new details to their dream, answering your question, or asking a follow-up.)
 
-#Instructions: Answer the question thoroughly & warmly. Keep supportive tone. Use ❓ emoji. Be helpful & empathetic. Don't rewrite dream interpretation. Give useful advice if relevant. Russian language, informal 'ты'. Use the full context provided to give accurate and relevant answers."""
+#Instructions: ALWAYS start your reply with ❓. If they added new dream details — interpret only those new details in context of the previous dream, briefly. If they answered your question — acknowledge warmly. If they asked something — answer. Do NOT repeat the full dream interpretation. Keep supportive tone. You are male — use masculine forms (готов, рад). Russian, informal 'ты'."""
 
         # Получаем ответ от AI
         reply = await ai_service.analyze_clarification_question(question, clarification_prompt)
@@ -143,10 +168,10 @@ Previous context: {context_summary}
         message_type = ai_service.extract_message_type(reply)
         
         if message_type == 'dream':
-            # Для толкований снов добавляем две кнопки
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📖 Сохранить в дневник снов", callback_data="save_dream:clarification")],
-                [InlineKeyboardButton("🔮 Астрологическое толкование", callback_data="astrological:clarification")]
+                [InlineKeyboardButton("📖 Сохранить в дневник снов", callback_data="save_dream:clarification"),
+                 InlineKeyboardButton("🔮 Астрологическое толкование", callback_data="astrological:clarification")],
+                [InlineKeyboardButton("💬 Уточнить детали", callback_data="clarify_details:clarification")]
             ])
             # Сохраняем данные сна во временное хранилище для последующего сохранения
             db.save_pending_dream(chat_id, question, reply, 'clarification')
@@ -262,23 +287,21 @@ async def process_dream_text(update: Update, context: ContextTypes.DEFAULT_TYPE,
         # Анализируем сон через AI
         reply = await ai_service.analyze_dream(dream_text, history, profile_info)
         db.log_activity(user, chat_id, "dream_interpreted", reply[:300])
-        
-        # Классифицируем ответ для определения типа сообщения
         message_type = ai_service.extract_message_type(reply)
-    
     except Exception as e:
         reply = f"❌ Ошибка, повторите ещё раз: {e}"
         db.log_activity(user, chat_id, "dream_interpretation_error", str(e))
+        message_type = "unknown"
     
     # Сохраняем ответ ассистента
     db.save_message(chat_id, "assistant", reply)
     
     # Создаем клавиатуру в зависимости от типа сообщения
     if message_type == 'dream':
-        # Для толкований снов добавляем две кнопки
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📖 Сохранить в дневник снов", callback_data=f"save_dream:{source_type}")],
-            [InlineKeyboardButton("🔮 Астрологическое толкование", callback_data=f"astrological:{source_type}")]
+            [InlineKeyboardButton("📖 Сохранить в дневник снов", callback_data=f"save_dream:{source_type}"),
+             InlineKeyboardButton("🔮 Астрологическое толкование", callback_data=f"astrological:{source_type}")],
+            [InlineKeyboardButton("💬 Уточнить детали", callback_data=f"clarify_details:{source_type}")]
         ])
         # Сохраняем данные сна во временное хранилище для последующего сохранения
         db.save_pending_dream(chat_id, dream_text, reply, source_type)
@@ -312,6 +335,19 @@ async def process_dream_text(update: Update, context: ContextTypes.DEFAULT_TYPE,
             context.user_data['dream_interpretation_msg_id'] = sent_msg.message_id
         else:
             await update.message.reply_text(reply, parse_mode='Markdown')
+
+
+async def handle_clarify_details_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Кнопка «Уточнить детали» — эмулирует Reply: следующее сообщение пользователя будет уточнением."""
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(update.effective_chat.id)
+    parts = query.data.split(":", 1)
+    source_type = parts[1] if len(parts) > 1 else "text"
+    context.user_data["awaiting_clarification"] = source_type
+    await query.message.reply_text(
+        "💬 Напиши детали, которые хочешь добавить — я учту их и дополню толкование."
+    )
 
 
 async def start_first_dream_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
