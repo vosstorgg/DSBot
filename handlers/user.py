@@ -62,17 +62,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # Логирование и обработка сна
+    # Логирование
     db.log_activity(user, chat_id, "message", user_message)
-    db.log_activity(user, chat_id, "gpt_request", f"model={AI_SETTINGS['model']}, temp={AI_SETTINGS['temperature']}, max_tokens={AI_SETTINGS['max_tokens']}")
     
     # Отправка "размышляет"
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
     thinking_msg = await update.message.reply_text("〰️ Размышляю...")
     
-    # Используем общую функцию для обработки текста сна (source_type = 'text' по умолчанию)
-    # Передаем thinking_msg, чтобы "Размышляю..." заменилось на толкование
-    await process_dream_text(update, context, user_message, thinking_msg, 'text')
+    # Предклассификация: сон или общее сообщение (приветствие, вопрос о боте и т.д.)
+    intent = await ai_service.classify_message_intent(user_message)
+    if intent == "not_dream":
+        history = db.get_message_history(chat_id, 4)
+        reply = await ai_service.respond_general(user_message, history)
+        db.save_message(chat_id, "user", user_message)
+        db.save_message(chat_id, "assistant", reply)
+        db.log_activity(user, chat_id, "general_response", reply[:200])
+        await thinking_msg.edit_text(reply, parse_mode="Markdown")
+        return
+    
+    db.log_activity(user, chat_id, "gpt_request", f"model={AI_SETTINGS['model']}, dream_interpretation")
+    await process_dream_text(update, context, user_message, thinking_msg, "text")
 
 
 async def handle_reply_message(update: Update, context: ContextTypes.DEFAULT_TYPE, question: str):
@@ -262,13 +271,11 @@ async def process_dream_text(update: Update, context: ContextTypes.DEFAULT_TYPE,
         # Анализируем сон через AI
         reply = await ai_service.analyze_dream(dream_text, history, profile_info)
         db.log_activity(user, chat_id, "dream_interpreted", reply[:300])
-        
-        # Классифицируем ответ для определения типа сообщения
         message_type = ai_service.extract_message_type(reply)
-    
     except Exception as e:
         reply = f"❌ Ошибка, повторите ещё раз: {e}"
         db.log_activity(user, chat_id, "dream_interpretation_error", str(e))
+        message_type = "unknown"
     
     # Сохраняем ответ ассистента
     db.save_message(chat_id, "assistant", reply)

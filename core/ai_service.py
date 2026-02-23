@@ -7,7 +7,7 @@ import tempfile
 from openai import AsyncOpenAI
 from datetime import datetime, timezone
 from typing import Optional, Dict, List, Tuple
-from core.config import AI_SETTINGS, DEFAULT_SYSTEM_PROMPT, WHISPER_SETTINGS
+from core.config import AI_SETTINGS, DEFAULT_SYSTEM_PROMPT, GENERAL_RESPONSE_PROMPT, WHISPER_SETTINGS
 
 
 class AIService:
@@ -65,6 +65,45 @@ class AIService:
         except Exception as e:
             return f"❌ Ошибка при анализе сна: {e}"
     
+    async def classify_message_intent(self, user_message: str) -> str:
+        """Определяет, является ли сообщение описанием сна (dream) или нет (not_dream)."""
+        if not user_message or len(user_message.strip()) < 3:
+            return "not_dream"
+        try:
+            response = await self.client.chat.completions.create(
+                model=AI_SETTINGS["model"],
+                messages=[
+                    {"role": "system", "content": "You classify user messages. Answer ONLY with one word: dream (user describes something they dreamed/saw in sleep) or not_dream (greeting, question about bot, general chat, thanks, or unclear). No other text."},
+                    {"role": "user", "content": user_message.strip()[:800]}
+                ],
+                temperature=0.1,
+                max_tokens=10
+            )
+            text = (response.choices[0].message.content or "").strip().lower()
+            return "dream" if text.startswith("dream") else "not_dream"
+        except Exception:
+            return "dream"  # при ошибке отправляем в толкование
+
+    async def respond_general(self, user_message: str, history: List[Dict]) -> str:
+        """Ответ на сообщение, которое не является описанием сна (приветствие, общий вопрос)."""
+        try:
+            messages = [{"role": "system", "content": GENERAL_RESPONSE_PROMPT}]
+            if history:
+                messages += history[-4:]  # последние 2 пары для контекста
+            messages.append({"role": "user", "content": user_message})
+            response = await self.client.chat.completions.create(
+                model=AI_SETTINGS["model"],
+                messages=messages,
+                temperature=0.5,
+                max_tokens=400
+            )
+            reply = response.choices[0].message.content or ""
+            if not reply.strip().startswith("💭"):
+                reply = "💭 " + reply.lstrip()
+            return reply
+        except Exception as e:
+            return f"💭 Привет! Когда захочешь — расскажи свой сон, и я помогу его понять. ❤️"
+
     async def analyze_clarification_question(self, question: str, clarification_prompt: str) -> str:
         """Анализ уточняющего вопроса через GPT-4"""
         try:
