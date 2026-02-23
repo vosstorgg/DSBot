@@ -4,7 +4,29 @@
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from core.database import db
-from core.config import IMAGE_PATHS
+from core.config import IMAGE_PATHS, LINKS
+
+
+async def send_donate_message(chat_id, context):
+    """Отправка сообщения о донате с фото и кнопкой (общая логика для callback и главного меню)."""
+    try:
+        with open(IMAGE_PATHS["donate"], "rb") as photo:
+            await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=photo,
+                caption="💰Спасибо тебе за желание поддержать проект! У нас ещё множество интересных идей для реализации!",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Задонатить!", url=LINKS["donation"])]
+                ])
+            )
+    except FileNotFoundError:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="💰Спасибо тебе за желание поддержать проект! У нас ещё множество интересных идей для реализации!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("Задонатить!", url=LINKS["donation"])]
+            ])
+        )
 
 
 async def send_start_menu(chat_id, context, user):
@@ -13,7 +35,6 @@ async def send_start_menu(chat_id, context, user):
     keyboard = [
         [InlineKeyboardButton("🧾 Познакомимся?", callback_data="start_profile")],
         [InlineKeyboardButton("🔮 Что я умею", callback_data="about")],
-                    [InlineKeyboardButton("💌 Подписаться на канал автора", url="https://t.me/N_W_passage/3")],
         [InlineKeyboardButton("💎 Донат на развитие", callback_data="donate")],
         [InlineKeyboardButton("🌙 Разобрать мой сон", callback_data="start_first_dream")],
         [InlineKeyboardButton("📖 Дневник снов", callback_data="diary_page:0")]
@@ -196,25 +217,7 @@ async def handle_info_callbacks(update: Update, context: ContextTypes.DEFAULT_TY
             )
     
     elif callback_data == "donate":
-        from core.config import LINKS
-        
-        try:
-            with open(IMAGE_PATHS["donate"], "rb") as photo:
-                await context.bot.send_photo(
-                    chat_id=query.message.chat_id,
-                    photo=photo,
-                    caption="💰Спасибо тебе за желание поддержать проект! У нас ещё множество интересных идей для реализации!",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("Задонатить!", url=LINKS["donation"])]
-                    ])
-                )
-        except FileNotFoundError:
-            await query.message.reply_text(
-                "💰Спасибо тебе за желание поддержать проект! У нас ещё множество интересных идей для реализации!",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Задонатить!", url=LINKS["donation"])]
-                ])
-            )
+        await send_donate_message(query.message.chat_id, context)
     
     elif callback_data == "start_first_dream":
         await query.message.reply_text(
