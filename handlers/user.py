@@ -44,13 +44,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start_first_dream_command(update, context)
         return
     
-    if user_message == "💌 Подписаться на канал автора":
-        await channel_view_command(update, context)
-        return
-    
     if user_message == "📖 Дневник снов":
         from handlers.diary import show_dream_diary
         await show_dream_diary(update, context)
+        return
+    
+    if user_message == "💎 Донат на развитие":
+        from handlers.profile import send_donate_message
+        await send_donate_message(chat_id, context)
         return
     
     # Для обычных пользователей - обрабатываем только текстовые описания снов
@@ -319,17 +320,4 @@ async def start_first_dream_command(update: Update, context: ContextTypes.DEFAUL
         "✨ Расскажи мне свой сон, даже если он странный, запутанный или пугающий – так подробно, как можешь. "
         "Опиши атмосферу, эмоции, персонажей и, если хочешь, укажи дату и место сна (можно просто город).",
         reply_markup=MAIN_MENU 
-    )
-
-
-async def channel_view_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда для просмотра канала автора"""
-    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-    from core.config import LINKS
-    
-    await update.message.reply_text(
-        "Лучшая поддержка сейчас — подписаться на канал автора.\n\nСпасибо! ❤️",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Подписаться на канал", url=LINKS["author_channel"])]
-        ])
     )

@@ -43,7 +43,7 @@ DEFAULT_SYSTEM_PROMPT = """#Role You are a qualified Jungian dream analyst with 
 MAIN_MENU = ReplyKeyboardMarkup(
     keyboard=[
         ["🌙 Разобрать мой сон"],
-        ["📖 Дневник снов", "💌 Подписаться на канал автора"]
+        ["📖 Дневник снов", "💎 Донат на развитие"]
     ],
     resize_keyboard=True,
     one_time_keyboard=False
@@ -98,6 +98,5 @@ PAGINATION = {
 
 # === ССЫЛКИ ===
 LINKS = {
-    "author_channel": "https://t.me/N_W_passage/3", 
     "donation": "https://pay.cloudtips.ru/p/4f1dd4bf"
 }
