@@ -137,12 +137,12 @@ async def process_clarification_question(update: Update, context: ContextTypes.D
     
     try:
         # Создаем специальный промпт для уточняющего вопроса
-        clarification_prompt = f"""Previous context (your dream interpretation and question): {context_summary}
+        clarification_prompt = f"""Previous context (your dream interpretation): {context_summary}
 
 User's message: {question}
-(The user may be ANSWERING your question from the context, or asking a follow-up.)
+(The user may be adding new details to their dream, answering your question, or asking a follow-up.)
 
-#Instructions: Engage with their message supportively. If they answered your question — acknowledge and reflect on their answer warmly. If they asked something — answer thoroughly. Use ❓ emoji. Keep supportive tone. Russian language, informal 'ты'. Don't repeat or rewrite the full dream interpretation."""
+#Instructions: ALWAYS start your reply with ❓. If they added new dream details — interpret only those new details in context of the previous dream, briefly. If they answered your question — acknowledge warmly. If they asked something — answer. Do NOT repeat the full dream interpretation. Keep supportive tone. You are male — use masculine forms (готов, рад). Russian, informal 'ты'."""
 
         # Получаем ответ от AI
         reply = await ai_service.analyze_clarification_question(question, clarification_prompt)

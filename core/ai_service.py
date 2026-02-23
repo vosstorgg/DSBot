@@ -70,13 +70,19 @@ class AIService:
         if not user_message or len(user_message.strip()) < 3:
             return "not_dream"
 
-        # Если последнее сообщение бота содержало вопрос и ответ пользователя короткий — это уточнение
+        # Если последнее сообщение бота — толкование сна, а пользователь добавляет детали или отвечает — это уточнение
         if history:
             last_msg = history[-1] if history else None
-            if (last_msg and last_msg.get("role") == "assistant" and
-                    "?" in (last_msg.get("content") or "") and
-                    len(user_message.strip()) < 350):
-                return "clarification"
+            if last_msg and last_msg.get("role") == "assistant":
+                content = last_msg.get("content") or ""
+                # Бот пригласил к диалогу: вопрос, "дай знать", "если есть детали" и т.п.
+                invite_phrases = ("?", "дай знать", "если есть", "ещё детали", "подробнее", "вопросы", "расскажи")
+                bot_invites = any(p in content.lower() for p in invite_phrases)
+                # Пользователь дополняет сон: "ещё там", "также", "дополн" или короткое сообщение
+                addition_markers = ("ещё", "также", "дополн", "кстати", "а ещё")
+                user_adds = any(m in user_message.lower() for m in addition_markers)
+                if (bot_invites or user_adds) and len(user_message.strip()) < 450:
+                    return "clarification"
 
         try:
             response = await self.client.chat.completions.create(
@@ -137,7 +143,7 @@ class AIService:
             # Создаем специальный промпт для астрологического анализа
             date_info = f"Дата сна: {dream_date}" if dream_date else "Дата сна: не указана"
             
-            astrological_prompt = f"""PROMPT = "#Role You are an experienced astrologer; #Task Give ONLY an astrological analysis of the dream, without repeating or retelling any previous interpretation; {date_info} USER'S DREAM: {dream_text}; #Rules Start with 🔮 emoji and immediately begin astrological analysis; use astrological approach: planets, zodiac signs, houses, aspects; link dream symbols with astrological archetypes; if dream date is given, use it; be thorough & supportive; structure analysis with emojis; NO greetings or introductory phrases; #Usercontext End by inviting reflection/response; write in Russian using informal 'ты'."""
+            astrological_prompt = f"""PROMPT = "#Role You are a male experienced astrologer; use masculine forms (готов, рад). #Task Give ONLY an astrological analysis of the dream, without repeating or retelling any previous interpretation; {date_info} USER'S DREAM: {dream_text}; #Rules Start with 🔮 emoji and immediately begin astrological analysis; use astrological approach: planets, zodiac signs, houses, aspects; link dream symbols with astrological archetypes; if dream date is given, use it; be thorough and supportive; structure analysis with emojis; NO greetings or introductory phrases; #Usercontext End by inviting reflection/response; write in Russian using informal 'ты'."""
 
             response = await self.client.chat.completions.create(
                 model=AI_SETTINGS["model"],
