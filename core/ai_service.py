@@ -10,6 +10,13 @@ from typing import Optional, Dict, List, Tuple
 from core.config import AI_SETTINGS, DEFAULT_SYSTEM_PROMPT, GENERAL_RESPONSE_PROMPT, WHISPER_SETTINGS
 
 
+def _strip_trailing_smiley(text: str) -> str:
+    """Убирает 😊 в конце ответа."""
+    if not text:
+        return text
+    return text.rstrip().removesuffix(" 😊").removesuffix("😊").rstrip() or text
+
+
 class AIService:
     """Сервис для работы с OpenAI API"""
     
@@ -60,8 +67,7 @@ class AIService:
                 max_tokens=AI_SETTINGS["max_tokens"]
             )
             
-            return response.choices[0].message.content
-            
+            return _strip_trailing_smiley(response.choices[0].message.content or "")
         except Exception as e:
             return f"❌ Ошибка при анализе сна: {e}"
     
@@ -105,7 +111,7 @@ class AIService:
                 temperature=0.5,
                 max_tokens=400
             )
-            reply = response.choices[0].message.content or ""
+            reply = _strip_trailing_smiley(response.choices[0].message.content or "")
             if not reply.strip().startswith("💭"):
                 reply = "💭 " + reply.lstrip()
             return reply
@@ -125,8 +131,7 @@ class AIService:
                 max_tokens=AI_SETTINGS["max_tokens"]
             )
             
-            return response.choices[0].message.content
-            
+            return _strip_trailing_smiley(response.choices[0].message.content or "")
         except Exception as e:
             return f"❌ Ошибка при ответе на вопрос: {e}"
     
@@ -147,7 +152,7 @@ class AIService:
                 temperature=AI_SETTINGS["temperature"],
                 max_tokens=AI_SETTINGS["max_tokens"]
             )
-            return response.choices[0].message.content
+            return _strip_trailing_smiley(response.choices[0].message.content or "")
         except Exception as e:
             return f"❌ Ошибка при астрологическом анализе: {e}"
     
