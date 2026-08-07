@@ -44,10 +44,11 @@ class Message:
 class AdminBroadcastState:
     """Состояние администратора при создании рассылки"""
     step: str = "waiting_content"  # waiting_content, confirming
-    content: Optional[str] = None
+    content: Optional[str] = None  # HTML (с форматированием и ссылками)
     media_type: Optional[str] = None  # photo, video, document, audio, voice, sticker
     media_file_id: Optional[str] = None
-    caption: Optional[str] = None
+    caption: Optional[str] = None  # HTML caption
+    parse_mode: Optional[str] = "HTML"
 
 
 class BroadcastResult:
