@@ -204,10 +204,8 @@ User's message: {question}
         await _safe_edit_text(thinking_msg, reply, reply_markup=keyboard)
         
     except Exception as e:
-        error_msg = f"❌ Ошибка при ответе на вопрос: {e}"
         db.log_activity(user, chat_id, "clarification_error", str(e))
-        # Для ошибок без кнопок
-        await thinking_msg.edit_text(error_msg)
+        await thinking_msg.edit_text("❌ Не получилось сделать толкование, попробуй немного позже")
 
 
 async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -279,7 +277,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         db.log_activity(user, chat_id, "voice_error", str(e))
         await processing_msg.edit_text(
-            f"❌ Ошибка при обработке голосового сообщения: {e}\n\nПопробуйте отправить текстом."
+            "❌ Не получилось сделать толкование, попробуй немного позже"
         )
 
 
@@ -307,8 +305,8 @@ async def process_dream_text(update: Update, context: ContextTypes.DEFAULT_TYPE,
         db.log_activity(user, chat_id, "dream_interpreted", reply[:300])
         message_type = ai_service.extract_message_type(reply)
     except Exception as e:
-        reply = f"❌ Ошибка, повторите ещё раз: {e}"
         db.log_activity(user, chat_id, "dream_interpretation_error", str(e))
+        reply = "❌ Не получилось сделать толкование, попробуй немного позже"
         message_type = "unknown"
     
     # Сохраняем ответ ассистента
