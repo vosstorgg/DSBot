@@ -20,7 +20,8 @@ DATABASE_CONFIG = {
 
 # === AI МОДЕЛЬ НАСТРОЙКИ ===
 AI_SETTINGS = {
-    "model": "gpt-4o",
+    "dream_model": "gpt-5.6-terra",
+    "response_model": "gpt-5.4-mini",
     "temperature": 0.52,
     "max_tokens": 2200,
     "max_history": 10

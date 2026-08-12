@@ -1,5 +1,5 @@
 """
-Модуль для работы с OpenAI API (GPT-4 и Whisper)
+Модуль для работы с OpenAI API (GPT-5.6 Terra / GPT-5.4 mini и Whisper)
 """
 import os
 import io
@@ -52,7 +52,7 @@ class AIService:
         return ". ".join(profile_parts) + ("." if profile_parts else "")
     
     async def analyze_dream(self, dream_text: str, history: List[Dict], profile_info: str = "") -> str:
-        """Анализ сна через GPT-4"""
+        """Анализ сна через GPT-5.6 Terra"""
         try:
             prompt = self.build_prompt(profile_info)
             
@@ -61,7 +61,7 @@ class AIService:
             dream_with_date = f"Сон от {today_str}:\n{dream_text}"
             
             response = await self.client.chat.completions.create(
-                model=AI_SETTINGS["model"],
+                model=AI_SETTINGS["dream_model"],
                 messages=[{"role": "system", "content": prompt}] + history + [{"role": "user", "content": dream_with_date}],
                 temperature=AI_SETTINGS["temperature"],
                 max_tokens=AI_SETTINGS["max_tokens"]
@@ -85,7 +85,7 @@ class AIService:
 
         try:
             response = await self.client.chat.completions.create(
-                model=AI_SETTINGS["model"],
+                model=AI_SETTINGS["response_model"],
                 messages=[
                     {"role": "system", "content": "You classify user messages. Answer ONLY with one word: dream (user describes something they dreamed/saw in sleep) or not_dream (greeting, question about bot, general chat, thanks, or unclear). No other text."},
                     {"role": "user", "content": user_message.strip()[:800]}
@@ -106,7 +106,7 @@ class AIService:
                 messages += history[-4:]  # последние 2 пары для контекста
             messages.append({"role": "user", "content": user_message})
             response = await self.client.chat.completions.create(
-                model=AI_SETTINGS["model"],
+                model=AI_SETTINGS["response_model"],
                 messages=messages,
                 temperature=0.5,
                 max_tokens=400
@@ -119,10 +119,10 @@ class AIService:
             return f"💭 Привет! Когда захочешь — расскажи свой сон, и я помогу его понять. ❤️"
 
     async def analyze_clarification_question(self, question: str, clarification_prompt: str) -> str:
-        """Анализ уточняющего вопроса через GPT-4"""
+        """Анализ уточняющего вопроса через GPT-5.4 mini"""
         try:
             response = await self.client.chat.completions.create(
-                model=AI_SETTINGS["model"],
+                model=AI_SETTINGS["response_model"],
                 messages=[
                     {"role": "system", "content": clarification_prompt},
                     {"role": "user", "content": question}
@@ -144,7 +144,7 @@ class AIService:
             astrological_prompt = f"""PROMPT = "#Role You are a male experienced astrologer; use masculine forms (готов, рад). #Task Give ONLY an astrological analysis of the dream, without repeating or retelling any previous interpretation; {date_info} USER'S DREAM: {dream_text}; #Rules Start with 🔮 emoji and immediately begin astrological analysis; use astrological approach: planets, zodiac signs, houses, aspects; link dream symbols with astrological archetypes; if dream date is given, use it; be thorough and supportive; structure analysis with emojis; NO greetings or introductory phrases; #Usercontext End by inviting reflection/response; write in Russian using informal 'ты'."""
 
             response = await self.client.chat.completions.create(
-                model=AI_SETTINGS["model"],
+                model=AI_SETTINGS["dream_model"],
                 messages=[
                     {"role": "system", "content": astrological_prompt},
                     {"role": "user", "content": f"Проанализируй мой сон астрологически: {dream_text}"}

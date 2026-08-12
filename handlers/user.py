@@ -95,7 +95,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await thinking_msg.edit_text(reply, parse_mode="Markdown")
         return
     
-    db.log_activity(user, chat_id, "gpt_request", f"model={AI_SETTINGS['model']}, dream_interpretation")
+    db.log_activity(user, chat_id, "gpt_request", f"model={AI_SETTINGS['dream_model']}, dream_interpretation")
     await process_dream_text(update, context, user_message, thinking_msg, "text")
 
 

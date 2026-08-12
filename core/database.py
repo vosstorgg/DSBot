@@ -4,6 +4,7 @@
 import psycopg2
 import psycopg2.extras
 from datetime import datetime, timezone
+from contextlib import contextmanager
 from typing import List, Tuple, Optional, Dict, Any
 from core.config import DATABASE_CONFIG
 
@@ -25,6 +26,22 @@ class DatabaseManager:
         except Exception as e:
             print(f"❌ Ошибка подключения к БД: {e}")
             raise
+
+    def _ensure_connection(self):
+        """Проверка и восстановление подключения к БД при необходимости."""
+        if self.conn is None or getattr(self.conn, "closed", 1):
+            print("⚠️ Соединение с БД закрыто, переподключаюсь...")
+            self._connect()
+
+    @contextmanager
+    def _cursor(self):
+        """
+        Безопасное получение курсора с авто-переподключением,
+        если соединение уже закрыто.
+        """
+        self._ensure_connection()
+        with self.conn.cursor() as cur:
+            yield cur
     
     def _init_tables(self):
         """Инициализация таблиц"""
@@ -38,7 +55,7 @@ class DatabaseManager:
     
     def init_user_stats_table(self):
         """Создание таблицы статистики пользователей"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS user_stats (
                     chat_id VARCHAR(20) PRIMARY KEY,
@@ -55,7 +72,7 @@ class DatabaseManager:
     
     def init_messages_table(self):
         """Создание таблицы сообщений"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS messages (
                     id SERIAL PRIMARY KEY,
@@ -73,7 +90,7 @@ class DatabaseManager:
     
     def init_user_profile_table(self):
         """Создание таблицы профилей пользователей"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS user_profile (
                     chat_id VARCHAR(20) PRIMARY KEY,
@@ -87,7 +104,7 @@ class DatabaseManager:
     
     def init_user_activity_log_table(self):
         """Создание таблицы логов активности"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS user_activity_log (
                     id SERIAL PRIMARY KEY,
@@ -102,7 +119,7 @@ class DatabaseManager:
     
     def init_dreams_table(self):
         """Создание таблицы снов"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS dreams (
                     id SERIAL PRIMARY KEY,
@@ -124,7 +141,7 @@ class DatabaseManager:
     
     def init_pending_dreams_table(self):
         """Создание таблицы временных данных снов"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS pending_dreams (
                     id SERIAL PRIMARY KEY,
@@ -147,7 +164,7 @@ class DatabaseManager:
     
     def log_activity(self, user, chat_id: str, action: str, content: str = ""):
         """Логирование активности пользователя"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 INSERT INTO user_activity_log (user_id, username, chat_id, action, content)
                 VALUES (%s, %s, %s, %s, %s)
@@ -163,7 +180,7 @@ class DatabaseManager:
         """Обновление статистики пользователя для текстовых сообщений"""
         username = f"@{user.username}" if user.username else None
         
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 INSERT INTO user_stats (chat_id, username, messages_sent, symbols_sent, latest_activity, updated_at)
                 VALUES (%s, %s, 1, %s, now(), now())
@@ -185,7 +202,7 @@ class DatabaseManager:
         """Обновление статистики пользователя для голосовых сообщений"""
         username = f"@{user.username}" if user.username else None
         
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 INSERT INTO user_stats (chat_id, username, audio_sent, symbols_sent, latest_activity, updated_at)
                 VALUES (%s, %s, 1, %s, now(), now())
@@ -206,7 +223,7 @@ class DatabaseManager:
     def increment_start_count(self, user, chat_id: str):
         """Увеличение счетчика стартов"""
         username = f"@{user.username}" if user.username else None
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 INSERT INTO user_stats (chat_id, username, starts_count, latest_activity, updated_at)
                 VALUES (%s, %s, 1, now(), now())
@@ -224,7 +241,7 @@ class DatabaseManager:
     def increment_dreams_saved(self, user, chat_id: str):
         """Увеличение счетчика сохраненных снов"""
         username = f"@{user.username}" if user.username else None
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 INSERT INTO user_stats (chat_id, username, dreams_saved, latest_activity, updated_at)
                 VALUES (%s, %s, 1, now(), now())
@@ -242,7 +259,7 @@ class DatabaseManager:
     def update_latest_activity(self, user, chat_id: str):
         """Обновление времени последней активности пользователя"""
         username = f"@{user.username}" if user.username else None
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 INSERT INTO user_stats (chat_id, username, latest_activity, updated_at)
                 VALUES (%s, %s, now(), now())
@@ -258,7 +275,7 @@ class DatabaseManager:
     
     def get_all_users(self) -> List[str]:
         """Получить список всех пользователей"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 SELECT chat_id
                 FROM user_stats
@@ -271,7 +288,7 @@ class DatabaseManager:
     
     def get_user_stats_summary(self) -> Dict[str, Any]:
         """Получить сводную статистику пользователей"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             # Общие статистики
             cur.execute("""
                 SELECT 
@@ -296,7 +313,7 @@ class DatabaseManager:
     
     def get_user_stats_details(self, limit: int = 20) -> List[Tuple]:
         """Получить детальную статистику пользователей"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 SELECT 
                     chat_id,
@@ -316,7 +333,7 @@ class DatabaseManager:
     
     def save_message(self, chat_id: str, role: str, content: str):
         """Сохранение сообщения"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 INSERT INTO messages (chat_id, role, content, timestamp)
                 VALUES (%s, %s, %s, %s)
@@ -324,7 +341,7 @@ class DatabaseManager:
     
     def get_message_history(self, chat_id: str, limit: int = 10) -> List[Dict[str, str]]:
         """Получение истории сообщений"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 SELECT role, content FROM messages
                 WHERE chat_id = %s ORDER BY timestamp DESC LIMIT %s
@@ -336,7 +353,7 @@ class DatabaseManager:
     
     def save_user_profile(self, chat_id: str, username: str, gender: str, age_group: str, lucid_dreaming: str):
         """Сохранение профиля пользователя"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 INSERT INTO user_profile (chat_id, username, gender, age_group, lucid_dreaming, updated_at)
                 VALUES (%s, %s, %s, %s, %s, now())
@@ -349,7 +366,7 @@ class DatabaseManager:
     
     def get_user_profile(self, chat_id: str) -> Optional[Tuple]:
         """Получение профиля пользователя"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 SELECT gender, age_group, lucid_dreaming FROM user_profile
                 WHERE chat_id = %s
@@ -363,7 +380,7 @@ class DatabaseManager:
                    astrological_interpretation: str = None) -> bool:
         """Сохранение сна в дневник"""
         try:
-            with self.conn.cursor() as cur:
+            with self._cursor() as cur:
                 if dream_date:
                     cur.execute("""
                         INSERT INTO dreams (chat_id, dream_text, interpretation, astrological_interpretation, source_type, dream_date)
@@ -381,7 +398,7 @@ class DatabaseManager:
     
     def get_user_dreams(self, chat_id: str, limit: int = 10, offset: int = 0) -> List[Tuple]:
         """Получение снов пользователя с пагинацией"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 SELECT id, dream_text, interpretation, astrological_interpretation, source_type, created_at, dream_date
                 FROM dreams
@@ -393,7 +410,7 @@ class DatabaseManager:
     
     def count_user_dreams(self, chat_id: str) -> int:
         """Подсчет количества снов пользователя"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 SELECT COUNT(*) FROM dreams WHERE chat_id = %s
             """, (chat_id,))
@@ -401,7 +418,7 @@ class DatabaseManager:
     
     def get_dream_by_id(self, chat_id: str, dream_id: int) -> Optional[Tuple]:
         """Получение конкретного сна по ID"""
-        with self.conn.cursor() as cur:
+        with self._cursor() as cur:
             cur.execute("""
                 SELECT id, dream_text, interpretation, astrological_interpretation, source_type, created_at, dream_date
                 FROM dreams
@@ -412,7 +429,7 @@ class DatabaseManager:
     def delete_dream(self, chat_id: str, dream_id: int) -> bool:
         """Удаление сна"""
         try:
-            with self.conn.cursor() as cur:
+            with self._cursor() as cur:
                 cur.execute("""
                     DELETE FROM dreams
                     WHERE chat_id = %s AND id = %s
@@ -427,7 +444,7 @@ class DatabaseManager:
     def save_pending_dream(self, chat_id: str, dream_text: str, interpretation: str, source_type: str) -> bool:
         """Сохранение временных данных сна для последующего сохранения в дневник"""
         try:
-            with self.conn.cursor() as cur:
+            with self._cursor() as cur:
                 # Сначала удаляем старые временные данные для этого пользователя
                 cur.execute("""
                     DELETE FROM pending_dreams WHERE chat_id = %s
@@ -446,7 +463,7 @@ class DatabaseManager:
     def get_pending_dream(self, chat_id: str) -> Optional[Dict[str, Any]]:
         """Получение временных данных сна"""
         try:
-            with self.conn.cursor() as cur:
+            with self._cursor() as cur:
                 cur.execute("""
                     SELECT dream_text, interpretation, source_type, astrological_interpretation, created_at
                     FROM pending_dreams 
@@ -472,7 +489,7 @@ class DatabaseManager:
     def update_pending_dream_astrological(self, chat_id: str, astrological_interpretation: str) -> bool:
         """Обновление временных данных сна астрологическим толкованием"""
         try:
-            with self.conn.cursor() as cur:
+            with self._cursor() as cur:
                 cur.execute("""
                     UPDATE pending_dreams 
                     SET astrological_interpretation = %s, updated_at = now()
@@ -486,7 +503,7 @@ class DatabaseManager:
     def delete_pending_dream(self, chat_id: str) -> bool:
         """Удаление временных данных сна"""
         try:
-            with self.conn.cursor() as cur:
+            with self._cursor() as cur:
                 cur.execute("""
                     DELETE FROM pending_dreams WHERE chat_id = %s
                 """, (chat_id,))
@@ -498,7 +515,7 @@ class DatabaseManager:
     def _migrate_database(self):
         """Миграция базы данных"""
         try:
-            with self.conn.cursor() as cur:
+            with self._cursor() as cur:
                 # Проверяем текущий размер поля source_type
                 cur.execute("""
                     SELECT column_name, character_maximum_length 

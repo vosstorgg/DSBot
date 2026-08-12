@@ -43,6 +43,11 @@ if not TELEGRAM_TOKEN:
 telegram_app = Application.builder().token(TELEGRAM_TOKEN).build()
 
 
+async def telegram_error_handler(update, context):
+    """Глобальный обработчик ошибок telegram.ext."""
+    logger.exception("Telegram handler error", exc_info=context.error)
+
+
 async def main_button_handler(update, context):
     """Главный обработчик callback'ов"""
     query = update.callback_query
@@ -146,6 +151,7 @@ telegram_app.add_handler(MessageHandler(filters.Document.ALL, main_message_handl
 telegram_app.add_handler(MessageHandler(filters.AUDIO, main_message_handler))
 telegram_app.add_handler(MessageHandler(filters.VOICE, main_message_handler))
 telegram_app.add_handler(MessageHandler(filters.Sticker.ALL, main_message_handler))
+telegram_app.add_error_handler(telegram_error_handler)
 
 
 @asynccontextmanager
