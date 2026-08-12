@@ -2,6 +2,8 @@
 Обработчики для астрологического толкования снов
 """
 import logging
+import asyncio
+from contextlib import suppress
 from datetime import datetime, timezone, timedelta
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.error import BadRequest
@@ -11,6 +13,7 @@ from core.utils import cleanup_astrological_interface, cleanup_astrological_inte
 logger = logging.getLogger(__name__)
 
 MAX_TELEGRAM_MESSAGE_LEN = 4000
+LOADING_DOTS = [".", "..", "...", "..", "."]
 
 
 def _truncate_for_telegram(text: str, reserve: int = 120) -> str:
@@ -55,6 +58,29 @@ async def _safe_edit_markdown(message, text: str, reply_markup=None):
                     shortened = _truncate_for_telegram(text)
                     return await message.edit_text(shortened, reply_markup=reply_markup)
         raise
+
+
+def _start_loading_animation(message, base_text: str, interval: float = 0.7):
+    """Запускает анимацию вида '. .. ... .. .' в фоне."""
+    async def _animate():
+        i = 0
+        while True:
+            try:
+                await message.edit_text(f"{base_text}{LOADING_DOTS[i]}")
+            except BadRequest:
+                pass
+            i = (i + 1) % len(LOADING_DOTS)
+            await asyncio.sleep(interval)
+    return asyncio.create_task(_animate())
+
+
+async def _stop_loading_animation(task):
+    """Останавливает фоновую анимацию ожидания."""
+    if not task:
+        return
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
 
 
 async def handle_astrological_callback(update, context, callback_data):
@@ -171,7 +197,8 @@ async def perform_astrological_analysis(update, context, pending_dream, source_t
         await _safe_answer_callback(query, "🔮 Анализирую сон астрологически...")
         
         # Отправляем сообщение о начале астрологического анализа
-        thinking_msg = await query.message.reply_text("🔮 Размышляю над астрологическим значением твоего сна...")
+        thinking_msg = await query.message.reply_text("🔮 Размышляю над астрологическим значением сна...")
+        animation_task = _start_loading_animation(thinking_msg, "🔮 Размышляю над астрологическим значением сна")
         
         # Получаем астрологическое толкование с датой
         from core.ai_service import ai_service
@@ -221,12 +248,14 @@ async def perform_astrological_analysis(update, context, pending_dream, source_t
             keyboard = None
         
         # Отправляем астрологическое толкование
+        await _stop_loading_animation(animation_task)
         if keyboard:
             await _safe_edit_markdown(thinking_msg, astrological_reply, reply_markup=keyboard)
         else:
             await _safe_edit_markdown(thinking_msg, astrological_reply)
         
     except Exception as e:
+        await _stop_loading_animation(locals().get("animation_task"))
         await _safe_answer_callback(query, "❌ Произошла ошибка при астрологическом анализе.")
         from core.database import db
         log_error_and_notify(db, user, chat_id, "astrological_error", str(e))
@@ -242,7 +271,8 @@ async def perform_astrological_analysis_from_date_input(update, context, pending
     try:
         # Показываем "размышляет"
         await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-        thinking_msg = await update.message.reply_text("🔮 Размышляю над астрологическим значением твоего сна...")
+        thinking_msg = await update.message.reply_text("🔮 Размышляю над астрологическим значением сна...")
+        animation_task = _start_loading_animation(thinking_msg, "🔮 Размышляю над астрологическим значением сна")
         
         # Получаем астрологическое толкование с датой
         from core.ai_service import ai_service
@@ -291,12 +321,14 @@ async def perform_astrological_analysis_from_date_input(update, context, pending
             keyboard = None
         
         # Отправляем астрологическое толкование
+        await _stop_loading_animation(animation_task)
         if keyboard:
             await _safe_edit_markdown(thinking_msg, astrological_reply, reply_markup=keyboard)
         else:
             await _safe_edit_markdown(thinking_msg, astrological_reply)
         
     except Exception as e:
+        await _stop_loading_animation(locals().get("animation_task"))
         from core.database import db
         log_error_and_notify(db, user, chat_id, "astrological_error", str(e))
         await thinking_msg.edit_text("❌ Не получилось сделать толкование, попробуй немного позже")

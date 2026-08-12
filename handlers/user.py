@@ -2,6 +2,8 @@
 Обработчики для пользовательских взаимодействий (сны, голосовые сообщения)
 """
 import os
+import asyncio
+from contextlib import suppress
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest
@@ -9,6 +11,8 @@ from core.database import db
 from core.ai_service import ai_service
 import re
 from core.config import MAIN_MENU, AI_SETTINGS, IMAGE_PATHS
+
+LOADING_DOTS = [".", "..", "...", "..", "."]
 
 
 async def _safe_edit_text(message, text: str, reply_markup=None):
@@ -29,6 +33,29 @@ async def _safe_reply_text(message, text: str, reply_markup=None):
         if "Can't parse entities" in str(e):
             return await message.reply_text(text, reply_markup=reply_markup)
         raise
+
+
+def _start_loading_animation(message, base_text: str, interval: float = 0.7):
+    """Запускает анимацию вида '. .. ... .. .' в фоне."""
+    async def _animate():
+        i = 0
+        while True:
+            try:
+                await message.edit_text(f"{base_text}{LOADING_DOTS[i]}")
+            except BadRequest:
+                pass
+            i = (i + 1) % len(LOADING_DOTS)
+            await asyncio.sleep(interval)
+    return asyncio.create_task(_animate())
+
+
+async def _stop_loading_animation(task):
+    """Останавливает фоновую анимацию ожидания."""
+    if not task:
+        return
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -165,6 +192,8 @@ async def process_clarification_question(update: Update, context: ContextTypes.D
     if not thinking_msg:
         thinking_msg = await update.message.reply_text("〰️ Размышляю над твоим вопросом...")
     
+    animation_task = _start_loading_animation(thinking_msg, "〰️ Размышляю")
+
     try:
         # Создаем специальный промпт для уточняющего вопроса
         clarification_prompt = f"""Previous context (your dream interpretation): {context_summary}
@@ -201,9 +230,11 @@ User's message: {question}
             keyboard = None
         
         # Отправляем ответ
+        await _stop_loading_animation(animation_task)
         await _safe_edit_text(thinking_msg, reply, reply_markup=keyboard)
         
     except Exception as e:
+        await _stop_loading_animation(animation_task)
         db.log_activity(user, chat_id, "clarification_error", str(e))
         await thinking_msg.edit_text("❌ Не получилось сделать толкование, попробуй немного позже")
 
@@ -298,6 +329,8 @@ async def process_dream_text(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # Получаем профиль пользователя
     profile = db.get_user_profile(chat_id)
     profile_info = ai_service.format_profile_info(profile)
+
+    animation_task = _start_loading_animation(message_to_edit, "〰️ Размышляю") if message_to_edit else None
     
     try:
         # Анализируем сон через AI
@@ -308,6 +341,8 @@ async def process_dream_text(update: Update, context: ContextTypes.DEFAULT_TYPE,
         db.log_activity(user, chat_id, "dream_interpretation_error", str(e))
         reply = "❌ Не получилось сделать толкование, попробуй немного позже"
         message_type = "unknown"
+    finally:
+        await _stop_loading_animation(animation_task)
     
     # Сохраняем ответ ассистента
     db.save_message(chat_id, "assistant", reply)
