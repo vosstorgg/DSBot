@@ -64,7 +64,7 @@ class AIService:
                 model=AI_SETTINGS["dream_model"],
                 messages=[{"role": "system", "content": prompt}] + history + [{"role": "user", "content": dream_with_date}],
                 temperature=AI_SETTINGS["temperature"],
-                max_tokens=AI_SETTINGS["max_tokens"]
+                max_completion_tokens=AI_SETTINGS["max_tokens"]
             )
             
             return _strip_trailing_smiley(response.choices[0].message.content or "")
@@ -91,7 +91,7 @@ class AIService:
                     {"role": "user", "content": user_message.strip()[:800]}
                 ],
                 temperature=0.1,
-                max_tokens=10
+                max_completion_tokens=10
             )
             text = (response.choices[0].message.content or "").strip().lower()
             return "dream" if text.startswith("dream") else "not_dream"
@@ -109,7 +109,7 @@ class AIService:
                 model=AI_SETTINGS["response_model"],
                 messages=messages,
                 temperature=0.5,
-                max_tokens=400
+                max_completion_tokens=400
             )
             reply = _strip_trailing_smiley(response.choices[0].message.content or "")
             if not reply.strip().startswith("💭"):
@@ -128,7 +128,7 @@ class AIService:
                     {"role": "user", "content": question}
                 ],
                 temperature=AI_SETTINGS["temperature"],
-                max_tokens=AI_SETTINGS["max_tokens"]
+                max_completion_tokens=AI_SETTINGS["max_tokens"]
             )
             
             return _strip_trailing_smiley(response.choices[0].message.content or "")
@@ -150,7 +150,7 @@ class AIService:
                     {"role": "user", "content": f"Проанализируй мой сон астрологически: {dream_text}"}
                 ],
                 temperature=AI_SETTINGS["temperature"],
-                max_tokens=AI_SETTINGS["max_tokens"]
+                max_completion_tokens=AI_SETTINGS["max_tokens"]
             )
             return _strip_trailing_smiley(response.choices[0].message.content or "")
         except Exception as e:
