@@ -66,7 +66,14 @@ if not ADMIN_CHAT_ID:
     print("⚠️ ВНИМАНИЕ: ADMIN_CHAT_ID не установлен в переменных окружения!")
     print("⚠️ Админские функции будут недоступны!")
 
-ADMIN_CHAT_IDS = [ADMIN_CHAT_ID] if ADMIN_CHAT_ID else []
+# Разбираем строку с ID админов (может содержать несколько ID через запятую)
+ADMIN_CHAT_IDS = []
+if ADMIN_CHAT_ID:
+    # Убираем пробелы и разбиваем по запятой
+    admin_ids = [id.strip() for id in ADMIN_CHAT_ID.split(",")]
+    ADMIN_CHAT_IDS = admin_ids
+
+print(f"🔧 Админские ID: {ADMIN_CHAT_IDS}")
 
 # === WHISPER НАСТРОЙКИ ===
 WHISPER_SETTINGS = {
