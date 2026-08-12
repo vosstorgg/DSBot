@@ -11,6 +11,7 @@ from typing import Optional, Dict, List, Tuple
 from core.config import AI_SETTINGS, DEFAULT_SYSTEM_PROMPT, GENERAL_RESPONSE_PROMPT, WHISPER_SETTINGS
 
 logger = logging.getLogger(__name__)
+MARKER_PREFIXES = ("🌙", "💭", "❓", "🔮")
 
 
 def _strip_trailing_smiley(text: str) -> str:
@@ -31,11 +32,47 @@ class AIService:
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         prompt = DEFAULT_SYSTEM_PROMPT
         prompt += f"\n\n# Current date\nToday is {today_str}."
+        prompt += f"\n\n# Length limit\nYour full reply must be <= {AI_SETTINGS['max_reply_chars']} characters."
         
         if profile_info:
             prompt += f"\n\n# User context\n{profile_info.strip()}"
         
         return prompt
+
+    async def _fit_reply_length(self, reply: str) -> str:
+        """Укладывает ответ в лимит символов через переформулировку, без обрезки."""
+        if not reply:
+            return reply
+
+        max_chars = AI_SETTINGS.get("max_reply_chars", 3200)
+        if len(reply) <= max_chars:
+            return reply
+
+        forced_prefix = next((p for p in MARKER_PREFIXES if reply.startswith(p)), "")
+        rewrite_system = (
+            "You rewrite assistant messages in Russian for Telegram. "
+            f"Return a message that is <= {max_chars} characters. "
+            "Do not use markdown headings (#, ##, ###). Keep short paragraphs. "
+            "Preserve core meaning and supportive tone. Do not mention that you shortened text."
+        )
+        prefix_rule = f"Start with exactly: {forced_prefix}" if forced_prefix else "Keep the existing start marker if present."
+
+        try:
+            rewrite = await self.client.chat.completions.create(
+                model=AI_SETTINGS["response_model"],
+                messages=[
+                    {"role": "system", "content": rewrite_system},
+                    {"role": "user", "content": f"{prefix_rule}\n\nText:\n{reply}"}
+                ],
+                max_completion_tokens=900
+            )
+            rewritten = _strip_trailing_smiley(rewrite.choices[0].message.content or "")
+            if rewritten and len(rewritten) <= max_chars:
+                return rewritten
+        except Exception:
+            logger.exception("Reply length fitting failed")
+
+        return reply
     
     def format_profile_info(self, profile: Optional[Tuple]) -> str:
         """Форматирование информации профиля"""
@@ -69,7 +106,8 @@ class AIService:
                 max_completion_tokens=AI_SETTINGS["max_tokens"]
             )
             
-            return _strip_trailing_smiley(response.choices[0].message.content or "")
+            reply = _strip_trailing_smiley(response.choices[0].message.content or "")
+            return await self._fit_reply_length(reply)
         except Exception as e:
             logger.exception("Dream analysis request failed")
             return "❌ Не получилось сделать толкование, попробуй немного позже"
@@ -115,7 +153,7 @@ class AIService:
             reply = _strip_trailing_smiley(response.choices[0].message.content or "")
             if not reply.strip().startswith("💭"):
                 reply = "💭 " + reply.lstrip()
-            return reply
+            return await self._fit_reply_length(reply)
         except Exception as e:
             logger.exception("General response request failed")
             return f"💭 Привет! Когда захочешь — расскажи свой сон, и я помогу его понять. ❤️"
@@ -132,7 +170,8 @@ class AIService:
                 max_completion_tokens=AI_SETTINGS["max_tokens"]
             )
             
-            return _strip_trailing_smiley(response.choices[0].message.content or "")
+            reply = _strip_trailing_smiley(response.choices[0].message.content or "")
+            return await self._fit_reply_length(reply)
         except Exception as e:
             logger.exception("Clarification request failed")
             return "❌ Не получилось сделать толкование, попробуй немного позже"
@@ -143,7 +182,7 @@ class AIService:
             # Создаем специальный промпт для астрологического анализа
             date_info = f"Дата сна: {dream_date}" if dream_date else "Дата сна: не указана"
             
-            astrological_prompt = f"""PROMPT = "#Role You are a male experienced astrologer; use masculine forms (готов, рад). #Task Give ONLY an astrological analysis of the dream, without repeating or retelling any previous interpretation; {date_info} USER'S DREAM: {dream_text}; #Rules Start with 🔮 emoji and immediately begin astrological analysis; use astrological approach: planets, zodiac signs, houses, aspects; link dream symbols with astrological archetypes; if dream date is given, use it; be thorough and supportive; structure analysis with emojis; NO greetings or introductory phrases; #Usercontext End by inviting reflection/response; write in Russian using informal 'ты'."""
+            astrological_prompt = f"""PROMPT = "#Role You are a male experienced astrologer; use masculine forms (готов, рад). #Task Give ONLY an astrological analysis of the dream, without repeating or retelling any previous interpretation; {date_info} USER'S DREAM: {dream_text}; #Rules Start with 🔮 emoji and immediately begin astrological analysis; use astrological approach: planets, zodiac signs, houses, aspects; link dream symbols with astrological archetypes; if dream date is given, use it; be thorough and supportive; structure analysis with emojis; NO greetings or introductory phrases; #Length Keep full reply within {AI_SETTINGS['max_reply_chars']} characters; #Usercontext End by inviting reflection/response; write in Russian using informal 'ты'."""
 
             response = await self.client.chat.completions.create(
                 model=AI_SETTINGS["dream_model"],
@@ -153,7 +192,8 @@ class AIService:
                 ],
                 max_completion_tokens=AI_SETTINGS["max_tokens"]
             )
-            return _strip_trailing_smiley(response.choices[0].message.content or "")
+            reply = _strip_trailing_smiley(response.choices[0].message.content or "")
+            return await self._fit_reply_length(reply)
         except Exception as e:
             logger.exception("Astrological analysis request failed")
             return "❌ Не получилось сделать толкование, попробуй немного позже"

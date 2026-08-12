@@ -4,10 +4,57 @@
 import logging
 from datetime import datetime, timezone, timedelta
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.error import BadRequest
 
 from core.utils import cleanup_astrological_interface, cleanup_astrological_interface_by_ids, remove_message_buttons_by_id, log_error_and_notify
 
 logger = logging.getLogger(__name__)
+
+MAX_TELEGRAM_MESSAGE_LEN = 4000
+
+
+def _truncate_for_telegram(text: str, reserve: int = 120) -> str:
+    """Ограничивает длину текста под лимит Telegram."""
+    if not text:
+        return text
+    limit = max(1000, MAX_TELEGRAM_MESSAGE_LEN - reserve)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
+async def _safe_answer_callback(query, text: str):
+    """Безопасный ответ на callback: игнорирует протухший query."""
+    try:
+        await query.answer(text)
+    except BadRequest as e:
+        err = str(e)
+        if "Query is too old" in err or "query id is invalid" in err:
+            logger.info("Callback query expired before answer")
+            return
+        raise
+
+
+async def _safe_edit_markdown(message, text: str, reply_markup=None):
+    """Редактирует сообщение с fallback для длинных/сломанных markdown ответов."""
+    try:
+        return await message.edit_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    except BadRequest as e:
+        err = str(e)
+        if "Message_too_long" in err:
+            shortened = _truncate_for_telegram(text)
+            try:
+                return await message.edit_text(shortened, parse_mode='Markdown', reply_markup=reply_markup)
+            except BadRequest:
+                return await message.edit_text(shortened, reply_markup=reply_markup)
+        if "Can't parse entities" in err:
+            try:
+                return await message.edit_text(text, reply_markup=reply_markup)
+            except BadRequest as e2:
+                if "Message_too_long" in str(e2):
+                    shortened = _truncate_for_telegram(text)
+                    return await message.edit_text(shortened, reply_markup=reply_markup)
+        raise
 
 
 async def handle_astrological_callback(update, context, callback_data):
@@ -21,7 +68,7 @@ async def handle_astrological_callback(update, context, callback_data):
         from core.database import db
         pending_dream = db.get_pending_dream(chat_id)
         if not pending_dream:
-            await query.answer("❌ Данные сна не найдены. Попробуйте еще раз.")
+            await _safe_answer_callback(query, "❌ Данные сна не найдены. Попробуйте еще раз.")
             return
         
         # Извлекаем source_type из callback_data
@@ -29,7 +76,7 @@ async def handle_astrological_callback(update, context, callback_data):
         logger.info(f"🔍 DEBUG: handle_astrological_callback - callback_data = {callback_data}, source_type = {source_type}")
         
         # Показываем уточнение даты
-        await query.answer("🔮 Уточняю дату сна...")
+        await _safe_answer_callback(query, "🔮 Уточняю дату сна...")
         
         # Отправляем сообщение с выбором даты
         date_msg = await query.message.reply_text(
@@ -48,7 +95,7 @@ async def handle_astrological_callback(update, context, callback_data):
         context.user_data['original_message_id'] = original_message_id
         
     except Exception as e:
-        await query.answer("❌ Произошла ошибка при выборе даты.")
+        await _safe_answer_callback(query, "❌ Произошла ошибка при выборе даты.")
         from core.database import db
         log_error_and_notify(db, user, chat_id, "astrological_date_error", str(e))
 
@@ -69,7 +116,7 @@ async def handle_astrological_date_callback(update, context, callback_data):
         from core.database import db
         pending_dream = db.get_pending_dream(chat_id)
         if not pending_dream:
-            await query.answer("❌ Данные сна не найдены. Попробуйте еще раз.")
+            await _safe_answer_callback(query, "❌ Данные сна не найдены. Попробуйте еще раз.")
             return
         
         # Определяем дату в зависимости от выбора
@@ -83,7 +130,7 @@ async def handle_astrological_date_callback(update, context, callback_data):
             date_str = selected_date.strftime("%Y-%m-%d")
         elif date_type == "custom":
             # Запрашиваем ввод даты
-            await query.answer("Введи дату в формате ДД.ММ.ГГГГ")
+            await _safe_answer_callback(query, "Введи дату в формате ДД.ММ.ГГГГ")
             
             # Устанавливаем состояние ожидания даты
             context.user_data['waiting_for_date'] = True
@@ -101,14 +148,14 @@ async def handle_astrological_date_callback(update, context, callback_data):
             )
             return
         else:
-            await query.answer("❌ Неизвестный тип даты.")
+            await _safe_answer_callback(query, "❌ Неизвестный тип даты.")
             return
         
         # Запускаем астрологический анализ с выбранной датой
         await perform_astrological_analysis(update, context, pending_dream, source_type, date_str)
         
     except Exception as e:
-        await query.answer("❌ Произошла ошибка при выборе даты.")
+        await _safe_answer_callback(query, "❌ Произошла ошибка при выборе даты.")
         from core.database import db
         log_error_and_notify(db, user, chat_id, "astrological_date_error", str(e))
 
@@ -121,7 +168,7 @@ async def perform_astrological_analysis(update, context, pending_dream, source_t
     
     try:
         # Показываем "размышляет"
-        await query.answer("🔮 Анализирую сон астрологически...")
+        await _safe_answer_callback(query, "🔮 Анализирую сон астрологически...")
         
         # Отправляем сообщение о начале астрологического анализа
         thinking_msg = await query.message.reply_text("🔮 Размышляю над астрологическим значением твоего сна...")
@@ -175,15 +222,16 @@ async def perform_astrological_analysis(update, context, pending_dream, source_t
         
         # Отправляем астрологическое толкование
         if keyboard:
-            await thinking_msg.edit_text(astrological_reply, parse_mode='Markdown', reply_markup=keyboard)
+            await _safe_edit_markdown(thinking_msg, astrological_reply, reply_markup=keyboard)
         else:
-            await thinking_msg.edit_text(astrological_reply, parse_mode='Markdown')
+            await _safe_edit_markdown(thinking_msg, astrological_reply)
         
     except Exception as e:
-        await query.answer("❌ Произошла ошибка при астрологическом анализе.")
+        await _safe_answer_callback(query, "❌ Произошла ошибка при астрологическом анализе.")
         from core.database import db
         log_error_and_notify(db, user, chat_id, "astrological_error", str(e))
-        await thinking_msg.edit_text("❌ Не получилось сделать толкование, попробуй немного позже")
+        if 'thinking_msg' in locals():
+            await thinking_msg.edit_text("❌ Не получилось сделать толкование, попробуй немного позже")
 
 
 async def perform_astrological_analysis_from_date_input(update, context, pending_dream, source_type, date_str):
@@ -244,9 +292,9 @@ async def perform_astrological_analysis_from_date_input(update, context, pending
         
         # Отправляем астрологическое толкование
         if keyboard:
-            await thinking_msg.edit_text(astrological_reply, parse_mode='Markdown', reply_markup=keyboard)
+            await _safe_edit_markdown(thinking_msg, astrological_reply, reply_markup=keyboard)
         else:
-            await thinking_msg.edit_text(astrological_reply, parse_mode='Markdown')
+            await _safe_edit_markdown(thinking_msg, astrological_reply)
         
     except Exception as e:
         from core.database import db
@@ -266,13 +314,13 @@ async def handle_cancel_date_input(update, context):
         context.user_data.pop('pending_astrological', None)
         
         # Показываем сообщение об отмене
-        await query.answer("❌ Ввод даты отменен")
+        await _safe_answer_callback(query, "❌ Ввод даты отменен")
         
         # Удаляем сообщение с вводом даты
         await query.message.delete()
         
     except Exception as e:
-        await query.answer("❌ Ошибка при отмене ввода даты")
+        await _safe_answer_callback(query, "❌ Ошибка при отмене ввода даты")
         from core.database import db
         log_error_and_notify(db, user, chat_id, "cancel_date_error", str(e))
 
