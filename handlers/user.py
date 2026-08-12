@@ -11,6 +11,26 @@ import re
 from core.config import MAIN_MENU, AI_SETTINGS, IMAGE_PATHS
 
 
+async def _safe_edit_text(message, text: str, reply_markup=None):
+    """Редактирует сообщение с fallback на plain text при ошибке Markdown."""
+    try:
+        return await message.edit_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    except BadRequest as e:
+        if "Can't parse entities" in str(e):
+            return await message.edit_text(text, reply_markup=reply_markup)
+        raise
+
+
+async def _safe_reply_text(message, text: str, reply_markup=None):
+    """Отправляет сообщение с fallback на plain text при ошибке Markdown."""
+    try:
+        return await message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    except BadRequest as e:
+        if "Can't parse entities" in str(e):
+            return await message.reply_text(text, reply_markup=reply_markup)
+        raise
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Основной обработчик сообщений пользователей"""
     chat_id = str(update.effective_chat.id)
@@ -92,7 +112,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.save_message(chat_id, "user", user_message)
         db.save_message(chat_id, "assistant", reply)
         db.log_activity(user, chat_id, "general_response", reply[:200])
-        await thinking_msg.edit_text(reply, parse_mode="Markdown")
+        await _safe_edit_text(thinking_msg, reply)
         return
     
     db.log_activity(user, chat_id, "gpt_request", f"model={AI_SETTINGS['dream_model']}, dream_interpretation")
@@ -181,7 +201,7 @@ User's message: {question}
             keyboard = None
         
         # Отправляем ответ
-        await thinking_msg.edit_text(reply, parse_mode='Markdown', reply_markup=keyboard)
+        await _safe_edit_text(thinking_msg, reply, reply_markup=keyboard)
         
     except Exception as e:
         error_msg = f"❌ Ошибка при ответе на вопрос: {e}"
@@ -241,8 +261,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             # Показываем полную расшифровку и оставляем её видимой
             await processing_msg.edit_text(
-                f"🎤 ➜ 📝 *Расшифровка:* {transcribed_text}",
-                parse_mode='Markdown'
+                f"🎤 ➜ 📝 Расшифровка: {transcribed_text}"
             )
             # Отправляем новое сообщение "Размышляю..." для замены на толкование
             thinking_msg = await update.message.reply_text("〰️ Размышляю над твоим сном...")
@@ -251,8 +270,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
         except BadRequest:
             # Если не удается редактировать, отправляем новое сообщение и обрабатываем без редактирования
             await update.message.reply_text(
-                f"🎤 ➜ 📝 *Расшифровка:* {transcribed_text}",
-                parse_mode='Markdown'
+                f"🎤 ➜ 📝 Расшифровка: {transcribed_text}"
             )
             # Отправляем новое сообщение для анализа
             thinking_msg = await update.message.reply_text("〰️ Размышляю над твоим сном...")
@@ -315,26 +333,26 @@ async def process_dream_text(update: Update, context: ContextTypes.DEFAULT_TYPE,
         try:
             # Редактируем сообщение "Размышляю..." на толкование
             if keyboard:
-                await message_to_edit.edit_text(reply, parse_mode='Markdown', reply_markup=keyboard)
+                await _safe_edit_text(message_to_edit, reply, reply_markup=keyboard)
                 # Сохраняем ID сообщения с толкованием для будущих операций
                 context.user_data['dream_interpretation_msg_id'] = message_to_edit.message_id
             else:
-                await message_to_edit.edit_text(reply, parse_mode='Markdown')
+                await _safe_edit_text(message_to_edit, reply)
         except BadRequest:
             # Если не удается редактировать, отправляем новое сообщение
             if keyboard:
-                sent_msg = await update.message.reply_text(reply, parse_mode='Markdown', reply_markup=keyboard)
+                sent_msg = await _safe_reply_text(update.message, reply, reply_markup=keyboard)
                 # Сохраняем ID сообщения с толкованием
                 context.user_data['dream_interpretation_msg_id'] = sent_msg.message_id
             else:
-                await update.message.reply_text(reply, parse_mode='Markdown')
+                await _safe_reply_text(update.message, reply)
     else:
         if keyboard:
-            sent_msg = await update.message.reply_text(reply, parse_mode='Markdown', reply_markup=keyboard)
+            sent_msg = await _safe_reply_text(update.message, reply, reply_markup=keyboard)
             # Сохраняем ID сообщения с толкованием
             context.user_data['dream_interpretation_msg_id'] = sent_msg.message_id
         else:
-            await update.message.reply_text(reply, parse_mode='Markdown')
+            await _safe_reply_text(update.message, reply)
 
 
 async def handle_clarify_details_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
