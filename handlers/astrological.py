@@ -183,7 +183,7 @@ async def perform_astrological_analysis(update, context, pending_dream, source_t
         await query.answer("❌ Произошла ошибка при астрологическом анализе.")
         from core.database import db
         log_error_and_notify(db, user, chat_id, "astrological_error", str(e))
-        await thinking_msg.edit_text(f"❌ Ошибка при астрологическом анализе: {e}")
+        await thinking_msg.edit_text("❌ Не получилось сделать толкование, попробуй немного позже")
 
 
 async def perform_astrological_analysis_from_date_input(update, context, pending_dream, source_type, date_str):
@@ -249,9 +249,9 @@ async def perform_astrological_analysis_from_date_input(update, context, pending
             await thinking_msg.edit_text(astrological_reply, parse_mode='Markdown')
         
     except Exception as e:
-        await thinking_msg.edit_text(f"❌ Ошибка при астрологическом анализе: {e}")
         from core.database import db
         log_error_and_notify(db, user, chat_id, "astrological_error", str(e))
+        await thinking_msg.edit_text("❌ Не получилось сделать толкование, попробуй немного позже")
 
 
 async def handle_cancel_date_input(update, context):

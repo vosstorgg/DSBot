@@ -4,10 +4,13 @@
 import os
 import io
 import tempfile
+import logging
 from openai import AsyncOpenAI
 from datetime import datetime, timezone
 from typing import Optional, Dict, List, Tuple
 from core.config import AI_SETTINGS, DEFAULT_SYSTEM_PROMPT, GENERAL_RESPONSE_PROMPT, WHISPER_SETTINGS
+
+logger = logging.getLogger(__name__)
 
 
 def _strip_trailing_smiley(text: str) -> str:
@@ -63,13 +66,13 @@ class AIService:
             response = await self.client.chat.completions.create(
                 model=AI_SETTINGS["dream_model"],
                 messages=[{"role": "system", "content": prompt}] + history + [{"role": "user", "content": dream_with_date}],
-                temperature=AI_SETTINGS["temperature"],
                 max_completion_tokens=AI_SETTINGS["max_tokens"]
             )
             
             return _strip_trailing_smiley(response.choices[0].message.content or "")
         except Exception as e:
-            return f"❌ Ошибка при анализе сна: {e}"
+            logger.exception("Dream analysis request failed")
+            return "❌ Не получилось сделать толкование, попробуй немного позже"
     
     async def classify_message_intent(self, user_message: str, history: Optional[List[Dict]] = None) -> str:
         """Определяет тип сообщения: dream, not_dream или clarification (ответ на вопрос бота)."""
@@ -90,7 +93,6 @@ class AIService:
                     {"role": "system", "content": "You classify user messages. Answer ONLY with one word: dream (user describes something they dreamed/saw in sleep) or not_dream (greeting, question about bot, general chat, thanks, or unclear). No other text."},
                     {"role": "user", "content": user_message.strip()[:800]}
                 ],
-                temperature=0.1,
                 max_completion_tokens=10
             )
             text = (response.choices[0].message.content or "").strip().lower()
@@ -108,7 +110,6 @@ class AIService:
             response = await self.client.chat.completions.create(
                 model=AI_SETTINGS["response_model"],
                 messages=messages,
-                temperature=0.5,
                 max_completion_tokens=400
             )
             reply = _strip_trailing_smiley(response.choices[0].message.content or "")
@@ -116,6 +117,7 @@ class AIService:
                 reply = "💭 " + reply.lstrip()
             return reply
         except Exception as e:
+            logger.exception("General response request failed")
             return f"💭 Привет! Когда захочешь — расскажи свой сон, и я помогу его понять. ❤️"
 
     async def analyze_clarification_question(self, question: str, clarification_prompt: str) -> str:
@@ -127,13 +129,13 @@ class AIService:
                     {"role": "system", "content": clarification_prompt},
                     {"role": "user", "content": question}
                 ],
-                temperature=AI_SETTINGS["temperature"],
                 max_completion_tokens=AI_SETTINGS["max_tokens"]
             )
             
             return _strip_trailing_smiley(response.choices[0].message.content or "")
         except Exception as e:
-            return f"❌ Ошибка при ответе на вопрос: {e}"
+            logger.exception("Clarification request failed")
+            return "❌ Не получилось сделать толкование, попробуй немного позже"
     
     async def analyze_dream_astrologically(self, dream_text: str, previous_interpretation: str, source_type: str, dream_date: str = None) -> str:
         """Астрологический анализ сна с сохранением контекста и тона"""
@@ -149,12 +151,12 @@ class AIService:
                     {"role": "system", "content": astrological_prompt},
                     {"role": "user", "content": f"Проанализируй мой сон астрологически: {dream_text}"}
                 ],
-                temperature=AI_SETTINGS["temperature"],
                 max_completion_tokens=AI_SETTINGS["max_tokens"]
             )
             return _strip_trailing_smiley(response.choices[0].message.content or "")
         except Exception as e:
-            return f"❌ Ошибка при астрологическом анализе: {e}"
+            logger.exception("Astrological analysis request failed")
+            return "❌ Не получилось сделать толкование, попробуй немного позже"
     
     def extract_message_type(self, ai_response: str) -> str:
         """Извлечение типа сообщения из ответа AI"""
