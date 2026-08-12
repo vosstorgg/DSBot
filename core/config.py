@@ -24,7 +24,8 @@ AI_SETTINGS = {
     "response_model": "gpt-5.4-mini",
     "temperature": 0.52,
     "max_tokens": 2200,
-    "max_history": 10
+    "max_history": 10,
+    "max_reply_chars": 3200
 }
 
 # === ПУТИ К ФАЙЛАМ ===
