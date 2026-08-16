@@ -1,0 +1,18 @@
+{
+  "name": "Dream Analysis Bot",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh",
+  "terminals": [
+    {
+      "name": "web",
+      "command": "bash .cursor/run-web.sh"
+    }
+  ],
+  "ports": [
+    {
+      "name": "web server",
+      "port": 8000
+    }
+  ]
+}
